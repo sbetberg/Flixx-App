@@ -1,5 +1,11 @@
 const global = {
   currentPage: window.location.pathname,
+  search: { term: "", type: "", page: 1, totalPages: 1, totalResults: 0 },
+
+  api: {
+    key: "74d8b487dc7f2975760306bdb47b8643",
+    URL: "https://api.themoviedb.org/3/",
+  },
 };
 
 ////////////////////////////////////////////////////////////
@@ -8,12 +14,9 @@ const global = {
 ///Fetch Data from TMDB API
 
 async function fetchAPIData(endpoint) {
-  const API_KEY = "74d8b487dc7f2975760306bdb47b8643";
-  const API_URL = "https://api.themoviedb.org/3/";
-
   showSpinner();
   const response = await fetch(
-    `${API_URL}${endpoint}?api_key=${API_KEY}&language=en-US`
+    `${global.api.URL}${endpoint}?api_key=${global.api.key}&language=en-US`
   );
   console.log(response);
   const data = await response.json();
@@ -22,6 +25,21 @@ async function fetchAPIData(endpoint) {
   return data;
 }
 
+//search api
+
+async function searchAPIData() {
+  showSpinner();
+  const response = await fetch(
+    `${global.api.URL}search/${global.search.type}?api_key=${global.api.key}&language=en-US&query=${global.search.term}&page=${global.search.page}`
+  );
+
+  const data = await response.json();
+
+  hideSpinner();
+  return data;
+}
+
+///////////////////////////
 function showSpinner() {
   const theSpinner = document.querySelector(".spinner");
   theSpinner.classList.add("show");
@@ -94,6 +112,16 @@ function formatDate(dateStr) {
     day: "numeric",
   };
   return date.toLocaleDateString(undefined, options);
+}
+
+function showAlert(message, className) {
+  const alertDiv = document.createElement("div");
+  alertDiv.classList.add("alert", className);
+  alertDiv.appendChild(document.createTextNode(message));
+  document.querySelector("#alert").appendChild(alertDiv);
+  setTimeout(() => {
+    alertDiv.remove();
+  }, 3000);
 }
 
 ///////////////////////////////////////////////////////
@@ -336,6 +364,8 @@ async function displayTvDetails() {
   console.log("tv", show);
   displayBackgroundImage("show", show.backdrop_path);
 
+  //<img "src="https://image.tmdb.org/t/p/w92${network.logo_path}
+
   const div = document.createElement("div");
   div.innerHTML = `
   <div class="details-top">
@@ -386,12 +416,10 @@ async function displayTvDetails() {
           <li><span class="text-secondary">Language: </span>${show.languages.join(
             ", "
           )}</li>
-    <li>${show.networks
-      .map(
-        (network) =>
-          `<img "src="https://image.tmdb.org/t/p/w92/${network.logo_path}"</img>`
-      )
-      .join("")}
+  
+    <li><span class="text-secondary">networks</span> ${show.networks
+      .map((network) => `<span> ${network.name}</span>`)
+      .join(", ")}
   </ul>
   <h4>Production Companies</h4>
   <div class="list-group">
@@ -462,6 +490,108 @@ function initSwiper() {
     },
   });
 }
+/////////////////////////////////////////////////////////////
+function displaySearchResults(results) {
+  const grid = document.getElementById("search-results");
+  const isMovie = global.search.type === "movie";
+
+  console.log(results);
+
+  //clear prev results
+  grid.innerHTML = "";
+  document.getElementById("search-results-heading").innerHTML = "";
+  document.getElementById("pagination").innerHTML = "";
+
+  results.forEach((result) => {
+    const card = document.createElement("div");
+    card.classList.add("card");
+    card.innerHTML = `
+      <div class="card">
+      <a href="${isMovie ? "./movie-details.html" : "tv-details.html"}?id=${
+      result.id
+    }"
+      >
+        <img src="${makeImagePath(
+          result.poster_path
+        )}" class="card-img-top" alt="" />
+      </a>
+      <div class="card-body">
+        <h5 class="card-title">${isMovie ? result.title : result.name}</h5>
+        <p class="card-text">
+          <small class="text-muted">${
+            isMovie
+              ? "Release: " + formatDate(result.release_date)
+              : "First Air Date: " + formatDate(result.first_air_date)
+          }</small>
+        </p>
+      </div>
+      `;
+
+    grid.appendChild(card);
+  });
+
+  document.querySelector("#search-results-heading").innerHTML = `<h2>${
+    (global.search.page - 1) * 20 + 1
+  } -${(global.search.page - 1) * 20 + results.length} of ${
+    global.search.totalResults
+  } for "${global.search.term}"`;
+
+  displayPagination();
+}
+function displayPagination() {
+  const div = document.createElement("div");
+  div.innerHTML = `
+    <div class="pagination">
+    <button class="btn btn-primary" id="prev">Prev</button>
+    <button class="btn btn-primary" id="next">Next</button>
+    <div class="page-counter">Page ${global.search.page} of ${global.search.totalPages}</div>
+  </div>`;
+  document.querySelector("#pagination").appendChild(div);
+
+  //check to diable buttons
+  if (global.search.page === 1) document.querySelector("#prev").disabled = true;
+
+  if (global.search.page === global.search.totalPages)
+    document.querySelector("#next").disabled = true;
+
+  //nextpage
+  document.querySelector("#next").addEventListener("click", async () => {
+    global.search.page++;
+    const { results, total_pages } = await searchAPIData();
+    displaySearchResults(results);
+  });
+
+  document.querySelector("#prev").addEventListener("click", async () => {
+    global.search.page--;
+    const { results, total_pages } = await searchAPIData();
+    displaySearchResults(results);
+  });
+}
+async function doSearch() {
+  const queryString = window.location.search;
+  const urlParams = new URLSearchParams(queryString);
+  global.search.type = urlParams.get("type");
+  global.search.term = urlParams.get("search-term");
+
+  console.log("the term", global.search.term);
+  if (global.search.term === "" || global.search.term === null) {
+    //alert
+    showAlert("please enter a term", "alert-error");
+    return;
+  }
+
+  const { results, total_pages, page, total_results } = await searchAPIData();
+  global.search.page = page;
+  global.search.totalPages = total_pages;
+  global.search.totalResults = total_results;
+  console.log("results", results);
+  if (results.length === 0) {
+    showAlert("no items found", "alert-success");
+    return;
+  }
+  displaySearchResults(results);
+  document.querySelector("#search-term").value = "";
+}
 
 //////
 //Init App
@@ -480,6 +610,7 @@ function init() {
 
       break;
     case "/search.html":
+      doSearch();
       break;
     case "/tv-details.html":
       displayTvDetails();
